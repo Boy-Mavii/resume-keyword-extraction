@@ -294,10 +294,7 @@ export default function Home() {
         )}
 
         {/* Upload Container / Results View */}
-        <div
-          ref={uploadZoneRef}
-          className={`w-full mb-16 ${results.length > 1 ? "max-w-7xl" : "max-w-5xl"}`}
-        >
+        <div ref={uploadZoneRef} className="w-full max-w-5xl mb-16">
           {results.length === 0 ? (
             <div className="bg-white rounded-3xl border border-slate-200/80 p-8 md:p-12 shadow-premium hover:shadow-premium-hover transition-shadow relative overflow-hidden animate-slideUp">
               {/* Scan Mockup Line */}
@@ -479,17 +476,14 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className={`grid grid-cols-1 gap-6 ${results.length > 1 ? "lg:grid-cols-2" : ""}`}>
+              <div className="flex flex-col gap-10">
                 {results.map((slot, i) => (
-                  <div
-                    key={`${slot.filename}-${i}`}
-                    className="bg-slate-50/60 border border-slate-200/80 rounded-3xl p-4 md:p-5 flex flex-col gap-3"
-                  >
+                  <div key={`${slot.filename}-${i}`} className="flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-3 px-1">
                       <div className="min-w-0 flex items-center gap-2">
                         <FileText size={14} className="text-blue-500 shrink-0" />
                         <span className="text-xs font-black text-slate-700 truncate">
-                          {slot.filename}
+                          Resume {i + 1} of {results.length} &middot; {slot.filename}
                         </span>
                       </div>
                       <button
@@ -501,11 +495,7 @@ export default function Home() {
                       </button>
                     </div>
                     {slot.kind === "success" ? (
-                      <ExtractionResults
-                        data={slot.data}
-                        onReset={() => removeResult(i)}
-                        compact={results.length > 1}
-                      />
+                      <ExtractionResults data={slot.data} onReset={() => removeResult(i)} />
                     ) : (
                       <div className="bg-white rounded-2xl border border-rose-100 p-6 text-center">
                         <p className="text-sm font-bold text-rose-600">Extraction failed</p>
