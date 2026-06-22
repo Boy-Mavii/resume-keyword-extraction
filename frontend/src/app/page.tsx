@@ -479,7 +479,7 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className={`grid grid-cols-1 gap-6 ${results.length > 1 ? "lg:grid-cols-2" : ""}`}>
                 {results.map((slot, i) => (
                   <div
                     key={`${slot.filename}-${i}`}
@@ -501,7 +501,11 @@ export default function Home() {
                       </button>
                     </div>
                     {slot.kind === "success" ? (
-                      <ExtractionResults data={slot.data} onReset={() => removeResult(i)} />
+                      <ExtractionResults
+                        data={slot.data}
+                        onReset={() => removeResult(i)}
+                        compact={results.length > 1}
+                      />
                     ) : (
                       <div className="bg-white rounded-2xl border border-rose-100 p-6 text-center">
                         <p className="text-sm font-bold text-rose-600">Extraction failed</p>

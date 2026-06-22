@@ -37,6 +37,7 @@ interface ExtractionResultsProps {
     keywords: string[];
   };
   onReset: () => void;
+  compact?: boolean;
 }
 
 interface RoleProfile {
@@ -67,7 +68,7 @@ const ROLE_PROFILES: Record<string, RoleProfile> = {
   },
 };
 
-const ExtractionResults: React.FC<ExtractionResultsProps> = ({ data, onReset }) => {
+const ExtractionResults: React.FC<ExtractionResultsProps> = ({ data, onReset, compact = false }) => {
   const [selectedRole, setSelectedRole] = useState<string>("software_engineer");
   const [atsScore, setAtsScore] = useState<number>(0);
   const [matchedSkills, setMatchedSkills] = useState<string[]>([]);
@@ -250,13 +251,13 @@ const ExtractionResults: React.FC<ExtractionResultsProps> = ({ data, onReset }) 
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
+      <div className={`grid grid-cols-1 gap-8 ${compact ? "" : "lg:grid-cols-3"}`}>
+
         {/* Left Side: Score & Optimization Dashboard */}
-        <div className="lg:col-span-2 flex flex-col gap-8">
-          
+        <div className={`flex flex-col gap-8 ${compact ? "" : "lg:col-span-2"}`}>
+
           {/* ATS Optimization Dashboard Card */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-6 md:p-8 shadow-premium flex flex-col md:flex-row items-center gap-8 print-card">
+          <div className={`bg-white rounded-2xl border border-slate-200/80 p-6 md:p-8 shadow-premium flex flex-col items-center gap-8 print-card ${compact ? "" : "md:flex-row"}`}>
             
             {/* SVG Score Ring */}
             <div className="relative w-36 h-36 flex-shrink-0">
