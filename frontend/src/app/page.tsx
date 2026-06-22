@@ -31,11 +31,17 @@ interface ResumeData {
   keywords: string[];
 }
 
+type ResultSlot =
+  | { kind: "success"; filename: string; data: ResumeData }
+  | { kind: "error"; filename: string; error: string };
+
+const MAX_FILES = 4;
+
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [results, setResults] = useState<ResumeData | null>(null);
+  const [results, setResults] = useState<ResultSlot[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,12 +58,12 @@ export default function Home() {
 
   // Auto scroll to the upload zone when a file is selected
   useEffect(() => {
-    if (file) {
+    if (files.length > 0) {
       setTimeout(() => {
         uploadZoneRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 100);
     }
-  }, [file]);
+  }, [files.length]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -71,12 +77,35 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setError(null);
-      setResults(null);
+  const addFiles = (incoming: File[]) => {
+    const valid: File[] = [];
+    let rejected = false;
+    for (const f of incoming) {
+      const ext = f.name.split(".").pop()?.toLowerCase();
+      if (ext === "pdf" || ext === "docx") valid.push(f);
+      else rejected = true;
     }
+    setFiles((prev) => {
+      const merged = [...prev, ...valid].slice(0, MAX_FILES);
+      const capped = prev.length + valid.length > MAX_FILES;
+      if (rejected) setError("Only PDF and DOCX file formats are supported.");
+      else if (capped) setError(`Maximum of ${MAX_FILES} files allowed. Extras were ignored.`);
+      else setError(null);
+      return merged;
+    });
+    setResults([]);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      addFiles(Array.from(e.target.files));
+      e.target.value = "";
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setError(null);
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -93,64 +122,62 @@ export default function Home() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0];
-      const extension = droppedFile.name.split('.').pop()?.toLowerCase();
-      if (extension === "pdf" || extension === "docx") {
-        setFile(droppedFile);
-        setError(null);
-        setResults(null);
-      } else {
-        setError("Only PDF and DOCX file formats are supported.");
-      }
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addFiles(Array.from(e.dataTransfer.files));
     }
   };
 
   const handleReset = () => {
-    setResults(null);
-    setFile(null);
+    setResults([]);
+    setFiles([]);
     setError(null);
   };
 
+  const removeResult = (index: number) => {
+    setResults((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleUpload = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
 
     setLoading(true);
-    setResults(null);
+    setResults([]);
     setError(null);
 
-    const formData = new FormData();
-    formData.append("file", file);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/extract`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("Extraction failed. Please verify that the backend API is running.");
+    const promises = files.map(async (file): Promise<ResultSlot> => {
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const response = await fetch(`${apiUrl}/extract`, {
+          method: "POST",
+          body: formData,
+        });
+        if (!response.ok) {
+          throw new Error(`Extraction failed (HTTP ${response.status})`);
+        }
+        const json = await response.json();
+        return { kind: "success", filename: file.name, data: json.data };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Extraction failed.";
+        return { kind: "error", filename: file.name, error: message };
       }
+    });
 
-      const data = await response.json();
-      setResults(data.data);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "An error occurred during extraction.";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
+    const settled = await Promise.all(promises);
+    setResults(settled);
+    setLoading(false);
   };
 
   const loadSampleResume = () => {
     setLoading(true);
     setError(null);
-    setResults(null);
+    setResults([]);
     
     // Simulate parsing time for premium feel
     setTimeout(() => {
-      setResults({
+      const sampleData: ResumeData = {
         name: "Abdulkabeer Olanrewaju",
         contact: {
           email: "olanrewajuabdulkabeer576@gmail.com",
@@ -176,7 +203,8 @@ export default function Home() {
           "Design Systems Architecture", "Lighthouse Optimization", "Figma Translations",
           "REST & GraphQL APIs", "Distributed Workflows", "API Integration", "Secure Onboarding"
         ]
-      });
+      };
+      setResults([{ kind: "success", filename: "Sample Resume.pdf", data: sampleData }]);
       setLoading(false);
     }, 1800);
   };
@@ -227,7 +255,7 @@ export default function Home() {
       <main className="flex-grow pt-24 px-6 max-w-7xl mx-auto w-full flex flex-col items-center">
         
         {/* Landing Page Content - Only visible if no results showing */}
-        {!results && (
+        {results.length === 0 && (
           <div className="w-full max-w-5xl text-center mt-8 mb-12 animate-fadeIn">
             {/* Header / Value Proposition */}
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-full text-blue-700 text-xs font-bold border border-blue-100/60 mb-6 shadow-sm">
@@ -266,8 +294,11 @@ export default function Home() {
         )}
 
         {/* Upload Container / Results View */}
-        <div ref={uploadZoneRef} className="w-full max-w-5xl mb-16">
-          {!results ? (
+        <div
+          ref={uploadZoneRef}
+          className={`w-full mb-16 ${results.length > 1 ? "max-w-7xl" : "max-w-5xl"}`}
+        >
+          {results.length === 0 ? (
             <div className="bg-white rounded-3xl border border-slate-200/80 p-8 md:p-12 shadow-premium hover:shadow-premium-hover transition-shadow relative overflow-hidden animate-slideUp">
               {/* Scan Mockup Line */}
               {loading && (
@@ -282,6 +313,7 @@ export default function Home() {
                 onChange={handleFileChange}
                 className="hidden"
                 accept=".pdf,.docx"
+                multiple
               />
 
               {/* Conditional States inside Upload Zone */}
@@ -306,37 +338,67 @@ export default function Home() {
                     <div className="h-full bg-blue-600 rounded-full transition-all duration-300" style={{ width: `${(loadingStep + 1) * (100 / loadingSteps.length)}%` }} />
                   </div>
                 </div>
-              ) : file ? (
-                /* File Loaded State */
-                <div className="py-8 md:py-12 text-center animate-fadeIn flex flex-col items-center">
-                  <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center border border-emerald-100 shadow-sm mb-6">
-                    <FileText size={40} className="stroke-[1.5]" />
+              ) : files.length > 0 ? (
+                /* Files Loaded State - supports up to 4 files */
+                <div className="py-8 md:py-10 animate-fadeIn">
+                  <div className="text-center mb-6">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
+                      {files.length} of {MAX_FILES} Files Ready
+                    </span>
+                    <h3 className="text-xl md:text-2xl font-black text-slate-900 mt-3">
+                      Batch Extraction Queue
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-400 font-bold">
+                      Up to {MAX_FILES} resumes processed in parallel
+                    </p>
                   </div>
-                  
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100 mb-3">
-                    File Ready for Extraction
-                  </span>
-                  
-                  <h3 className="text-xl md:text-2xl font-black text-slate-900 max-w-lg truncate px-4">
-                    {file.name}
-                  </h3>
-                  
-                  <p className="mt-1 text-xs text-slate-400 font-bold">
-                    {(file.size / 1024).toFixed(1)} KB &bull; {file.name.split('.').pop()?.toUpperCase()} Document
-                  </p>
-                  
-                  <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md px-4">
+
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl mx-auto mb-6">
+                    {files.map((f, i) => (
+                      <li
+                        key={`${f.name}-${i}`}
+                        className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-xl"
+                      >
+                        <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center border border-emerald-100 shrink-0">
+                          <FileText size={20} />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-xs font-black text-slate-900 truncate">{f.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold">
+                            {(f.size / 1024).toFixed(1)} KB &bull; {f.name.split(".").pop()?.toUpperCase()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => removeFile(i)}
+                          aria-label={`Remove ${f.name}`}
+                          className="w-8 h-8 flex items-center justify-center text-rose-500 hover:bg-rose-50 rounded-lg transition-all font-black"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-md mx-auto px-4">
                     <button
                       onClick={handleUpload}
                       className="w-full sm:flex-1 action-btn py-3 px-6 text-sm font-bold rounded-xl shadow-premium flex items-center justify-center gap-2"
                     >
-                      <Sparkles size={16} /> Optimize & Extract
+                      <Sparkles size={16} /> Optimize & Extract ({files.length})
                     </button>
+                    {files.length < MAX_FILES && (
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full sm:w-auto px-5 py-3 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100/80 rounded-xl transition-all"
+                      >
+                        Add More
+                      </button>
+                    )}
                     <button
                       onClick={handleReset}
                       className="w-full sm:w-auto px-5 py-3 text-sm font-bold text-rose-600 bg-rose-50 hover:bg-rose-100/80 rounded-xl transition-all"
                     >
-                      Remove
+                      Clear All
                     </button>
                   </div>
                 </div>
@@ -359,11 +421,11 @@ export default function Home() {
                   </div>
                   
                   <h3 className="text-xl font-bold text-slate-900">
-                    Upload your resume file
+                    Upload up to {MAX_FILES} resume files
                   </h3>
-                  
+
                   <p className="mt-2 text-sm text-slate-500 font-medium max-w-sm mx-auto">
-                    Drag and drop your file here, or click to browse local folders.
+                    Drag and drop one or more files here, or click to browse. Processed in parallel.
                   </p>
                   
                   <div className="mt-6 flex items-center justify-center gap-6 text-xs font-bold text-slate-400">
@@ -399,14 +461,62 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="w-full">
-              <ExtractionResults data={results} onReset={handleReset} />
+            <div className="w-full flex flex-col gap-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
+                    Batch Report
+                  </span>
+                  <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 mt-2">
+                    {results.length} Resume{results.length === 1 ? "" : "s"} Analyzed
+                  </h2>
+                </div>
+                <button
+                  onClick={handleReset}
+                  className="px-5 py-2.5 text-sm font-bold text-slate-700 bg-white border border-slate-200 hover:border-slate-300 rounded-xl shadow-premium transition-all"
+                >
+                  Scan New Resumes
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {results.map((slot, i) => (
+                  <div
+                    key={`${slot.filename}-${i}`}
+                    className="bg-slate-50/60 border border-slate-200/80 rounded-3xl p-4 md:p-5 flex flex-col gap-3"
+                  >
+                    <div className="flex items-center justify-between gap-3 px-1">
+                      <div className="min-w-0 flex items-center gap-2">
+                        <FileText size={14} className="text-blue-500 shrink-0" />
+                        <span className="text-xs font-black text-slate-700 truncate">
+                          {slot.filename}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeResult(i)}
+                        aria-label="Remove from report"
+                        className="w-7 h-7 flex items-center justify-center text-rose-500 hover:bg-rose-50 rounded-lg transition-all font-black text-lg leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {slot.kind === "success" ? (
+                      <ExtractionResults data={slot.data} onReset={() => removeResult(i)} />
+                    ) : (
+                      <div className="bg-white rounded-2xl border border-rose-100 p-6 text-center">
+                        <p className="text-sm font-bold text-rose-600">Extraction failed</p>
+                        <p className="text-xs text-slate-500 mt-2 font-semibold">{slot.error}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
         {/* Feature Cards Grid (Only visible if no results) */}
-        {!results && (
+        {results.length === 0 && (
           <section id="features" className="w-full max-w-5xl py-12 border-t border-slate-200/60 animate-fadeIn">
             <div className="text-center mb-12">
               <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900">
@@ -452,7 +562,7 @@ export default function Home() {
         )}
 
         {/* Security Section */}
-        {!results && (
+        {results.length === 0 && (
           <section id="security" className="w-full max-w-5xl py-12 border-t border-slate-200/60 animate-fadeIn">
             <div className="bg-slate-900 text-white rounded-3xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between gap-8 shadow-premium">
               <div className="max-w-xl text-left">
@@ -479,7 +589,7 @@ export default function Home() {
         )}
 
         {/* Testimonials Section */}
-        {!results && (
+        {results.length === 0 && (
           <section id="testimonials" className="w-full max-w-5xl py-12 border-t border-slate-200/60 mb-12 animate-fadeIn">
             <div className="text-center mb-10">
               <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900">
